@@ -1,0 +1,9 @@
+// Layer       : fc2
+// Tensor      : bias
+// Shape       : (1,)
+// Dtype       : INT32 (quantized with weight scale)
+// Formula     : bias_int32 = round(bias_float / w_scale[oc])
+// RTL usage   : acc_int32 + bias_int32  (before output re-scaling)
+// Use in RTL  : $readmemh("fc2_bias.hex", rom_fc2_b);
+//
+00000036

@@ -1,0 +1,24 @@
+// Layer       : conv1
+// Tensor      : bias
+// Shape       : (16,)
+// Dtype       : INT32 (quantized with weight scale)
+// Formula     : bias_int32 = round(bias_float / w_scale[oc])
+// RTL usage   : acc_int32 + bias_int32  (before output re-scaling)
+// Use in RTL  : $readmemh("conv1_bias.hex", rom_conv1_b);
+//
+ffffffc4
+fffffffa
+ffffff8f
+fffffffd
+0000000b
+0000004e
+fffffffc
+ffffffb9
+ffffffce
+fffffff7
+00000014
+fffffff0
+00000009
+0000001a
+00000004
+00000007

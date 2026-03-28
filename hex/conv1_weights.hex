@@ -1,0 +1,106 @@
+// Layer       : conv1
+// Tensor      : weights
+// Shape       : (16, 1, 5)
+// Dtype       : INT8  (symmetric, zero_point=0)
+// Memory order: addr = oc*(Cin*K) + ic*K + k
+//               oc in [0,16), ic in [0,1), k in [0,5)
+// Total words  : 80
+// Per-channel scales (oc=0 first):
+//   oc=  0: 1.40362531e-02
+//   oc=  1: 7.92794824e-02
+//   oc=  2: 8.05754215e-03
+//   oc=  3: 9.08863023e-02
+//   oc=  4: 6.79511428e-02
+//   oc=  5: 1.09586027e-02
+//   oc=  6: 7.80421942e-02
+//   oc=  7: 1.19895097e-02
+//   oc=  8: 1.65306795e-02
+//   oc=  9: 4.30776104e-02
+//   oc= 10: 3.87476943e-02
+//   oc= 11: 3.18696238e-02
+//   oc= 12: 7.20888972e-02
+//   oc= 13: 3.21543291e-02
+//   oc= 14: 4.64819670e-02
+//   oc= 15: 4.50208560e-02
+// Use in RTL  : $readmemh("conv1_weights.hex", rom_conv1_w);
+//
+39
+45
+f6
+7f
+f4
+21
+ba
+2e
+7f
+8e
+7f
+25
+67
+1e
+70
+df
+6b
+e6
+81
+5d
+de
+f3
+c0
+7f
+b3
+ab
+cb
+92
+f4
+81
+6d
+81
+56
+04
+cc
+49
+1c
+7f
+2e
+f6
+24
+eb
+19
+7f
+32
+99
+7e
+29
+67
+81
+88
+df
+97
+7f
+2c
+3c
+36
+f4
+6d
+81
+23
+81
+26
+ca
+46
+f3
+7f
+a5
+a7
+c0
+5d
+21
+5e
+9b
+81
+81
+a8
+33
+2e
+76

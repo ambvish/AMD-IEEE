@@ -1,0 +1,72 @@
+// Layer       : fc1
+// Tensor      : bias
+// Shape       : (64,)
+// Dtype       : INT32 (quantized with weight scale)
+// Formula     : bias_int32 = round(bias_float / w_scale[oc])
+// RTL usage   : acc_int32 + bias_int32  (before output re-scaling)
+// Use in RTL  : $readmemh("fc1_bias.hex", rom_fc1_b);
+//
+00000009
+00000000
+ffffffe9
+00000004
+fffffff7
+fffffff3
+00000000
+00000000
+00000007
+fffffffb
+fffffff0
+fffffff1
+fffffff4
+00000000
+fffffff2
+fffffffe
+ffffffef
+fffffff4
+00000000
+00000002
+00000000
+fffffffc
+fffffff8
+0000000b
+00000000
+fffffff5
+ffffffe9
+fffffff9
+fffffffa
+fffffff7
+fffffff9
+0000000c
+00000004
+fffffffa
+fffffff9
+ffffffff
+00000008
+ffffffe9
+00000000
+ffffffef
+fffffffe
+fffffff3
+00000000
+ffffffe6
+fffffff9
+fffffff4
+00000000
+fffffff7
+fffffff3
+fffffff2
+ffffffec
+fffffff5
+00000003
+ffffffff
+00000001
+ffffffef
+00000000
+fffffffb
+fffffff8
+fffffff3
+fffffff3
+fffffff0
+fffffff4
+00000002
