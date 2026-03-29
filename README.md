@@ -1,7 +1,7 @@
 # AMD-IEEE
 <div align="center">
 
-# 🏥 Smart Hospital Edge AI System on FPGA
+# 🏥 Ravex Smart Hospital Edge AI System on FPGA
 
 ### Real-time ECG Anomaly Detection + Smart Energy Optimization — Fully Deployed in RTL on Zynq-7020
 
