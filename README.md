@@ -34,21 +34,21 @@ ECG Sensor → ADC (360 Hz) → ARM Pan-Tompkins → 187-sample beat
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
-- 🔴 **Pure RTL Inference Engine** — All Conv1D, FC, and MAC operations implemented in synthesisable Verilog. No HLS, no DPU shell overhead.
-- ⚡ **6.61 ms Deterministic Latency** — Exactly 661,299 clock cycles at 100 MHz. No jitter. No cache misses. No garbage collection.
-- 🧠 **INT8 Quantized 1D CNN** — 103,345-parameter ECGAnomalyNet, 4× compressed to ~101 KB via BatchNorm-folded symmetric per-channel quantization.
-- 📊 **97.4% Test Accuracy** — Trained and evaluated on the gold-standard MIT-BIH Arrhythmia Database (109,446 annotated beats).
-- 🔋 **1.75 W Total System Power** — 3.9× more power-efficient than an equivalent ARM Cortex-A9 software inference baseline.
-- 🏗️ **Fully Parameterised RTL** — All modules accept IN_CH, OUT_CH, IN_LEN, KERNEL, SHIFT as parameters. Extending to 12-lead ECG requires no architectural change.
-- 🏥 **Smart Energy Optimization** — Patient-state-aware HVAC, lighting, and equipment control with hard-coded clinical safety priority.
-- ✅ **Self-Checking Testbench** — 5 verified test cases with 2M-cycle watchdog and full VCD waveform output for GTKWave inspection.
-- 🔓 **Fully Open Toolchain** — PyTorch + Vivado WebPACK (free) + Icarus Verilog + GTKWave. 100% reproducible.
+-  **Pure RTL Inference Engine** — All Conv1D, FC, and MAC operations implemented in synthesisable Verilog. No HLS, no DPU shell overhead.
+-  **6.61 ms Deterministic Latency** — Exactly 661,299 clock cycles at 100 MHz. No jitter. No cache misses. No garbage collection.
+-  **INT8 Quantized 1D CNN** — 103,345-parameter ECGAnomalyNet, 4× compressed to ~101 KB via BatchNorm-folded symmetric per-channel quantization.
+-  **97.4% Test Accuracy** — Trained and evaluated on the gold-standard MIT-BIH Arrhythmia Database (109,446 annotated beats).
+-  **1.75 W Total System Power** — 3.9× more power-efficient than an equivalent ARM Cortex-A9 software inference baseline.
+-  **Fully Parameterised RTL** — All modules accept IN_CH, OUT_CH, IN_LEN, KERNEL, SHIFT as parameters. Extending to 12-lead ECG requires no architectural change.
+-  **Smart Energy Optimization** — Patient-state-aware HVAC, lighting, and equipment control with hard-coded clinical safety priority.
+-  **Self-Checking Testbench** — 5 verified test cases with 2M-cycle watchdog and full VCD waveform output for GTKWave inspection.
+-  **Fully Open Toolchain** — PyTorch + Vivado WebPACK (free) + Icarus Verilog + GTKWave. 100% reproducible.
 
 ---
 
-## 🏛️ System Architecture
+##  System Architecture
 
 The system is partitioned across the Zynq-7020's tightly coupled PS+PL architecture:
 
@@ -91,7 +91,7 @@ The system is partitioned across the Zynq-7020's tightly coupled PS+PL architect
 
 ---
 
-## 🧠 Model Architecture — ECGAnomalyNet
+##  Model Architecture — ECGAnomalyNet
 
 A compact 1D CNN with **103,345 parameters** (≈404 KB FP32 → ≈101 KB INT8):
 
@@ -127,15 +127,15 @@ Classification: result = (logit > 0) ? Abnormal : Normal
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
-| Test Accuracy | **97.4%** | >95% | ✅ PASS |
-| Sensitivity (Recall) | **96.8%** | >95% | ✅ PASS |
-| Specificity | **97.9%** | >95% | ✅ PASS |
-| F1 Score | **0.970** | >0.95 | ✅ PASS |
-| AUC-ROC | **0.994** | >0.99 | ✅ PASS |
-| False Negative Rate | **3.2%** | <5% | ✅ PASS |
-| Inference Latency | **6.61 ms** | <10 ms | ✅ PASS |
-| Model Size (INT8) | **101 KB** | <200 KB | ✅ PASS |
-| Quantization Accuracy Drop | **−0.2%** | <1% | ✅ PASS |
+| Test Accuracy | **97.4%** | >95% |  PASS |
+| Sensitivity (Recall) | **96.8%** | >95% |  PASS |
+| Specificity | **97.9%** | >95% |  PASS |
+| F1 Score | **0.970** | >0.95 |  PASS |
+| AUC-ROC | **0.994** | >0.99 | PASS |
+| False Negative Rate | **3.2%** | <5% |  PASS |
+| Inference Latency | **6.61 ms** | <10 ms |  PASS |
+| Model Size (INT8) | **101 KB** | <200 KB |  PASS |
+| Quantization Accuracy Drop | **−0.2%** | <1% |  PASS |
 
 ---
 
@@ -147,13 +147,13 @@ Classification: result = (logit > 0) ? Abnormal : Normal
 | ARM Cortex-A9 @ 667 MHz (FP32) | 44.2 ms | 667 MHz | **6.7× slower** |
 | ARM Cortex-A9 @ 667 MHz (INT8 NEON) | 18.7 ms | 667 MHz | **2.8× slower** |
 | STM32H7 @ 480 MHz (TFLite Micro) | 38.3 ms | 480 MHz | **5.8× slower** |
-| **Zynq PL RTL @ 100 MHz (Ours)** | **6.61 ms** | **100 MHz** | **✅ Fastest** |
+| **Zynq PL RTL @ 100 MHz (Ours)** | **6.61 ms** | **100 MHz** | **Fastest** |
 
 > The FPGA RTL engine achieves the lowest latency at **less than half the clock frequency** of the ARM baseline — demonstrating the parallelism advantage of dedicated hardware datapath design.
 
 ---
 
-## 🔋 Power Consumption
+##  Power Consumption
 
 | Component | Power | Notes |
 |-----------|-------|-------|
@@ -166,7 +166,7 @@ Classification: result = (logit > 0) ? Abnormal : Normal
 
 ---
 
-## 🏥 Energy Optimization Results
+##  Energy Optimization Results
 
 The ARM PS energy controller applies a 3-state ward policy driven by a 10-beat majority vote on the inference result:
 
@@ -189,7 +189,7 @@ The ARM PS energy controller applies a 3-state ward policy driven by a 10-beat m
 
 ---
 
-## 🔩 Hardware Design — RTL Modules
+##  Hardware Design — RTL Modules
 
 All inference logic is implemented in synthesisable Verilog with no vendor IP dependencies:
 
@@ -308,7 +308,7 @@ Total BRAM used: **89 / 140 × 36Kb blocks (63.6%)** on Zynq-7020.
 │                                                                 │
 │  ecg_inference_tb.v ──► Vivado XSim / Icarus Verilog           │
 │                          5 test cases · Watchdog · VCD dump    │
-│                          ✅ ALL PASS                            │
+│                            ALL PASS                            │
 │                                                                 │
 └────────────────────────┬────────────────────────────────────────┘
                          │
@@ -369,7 +369,7 @@ smart-hospital-fpga/
 
 ---
 
-## 🚀 How to Run
+##  How to Run
 
 ### Prerequisites
 
@@ -402,7 +402,7 @@ python weight_extractor.py --model ../training/models/ecg_cnn_best.pth
 # Folds BatchNorm, quantizes to INT8, exports $readmemh hex files
 # Verify with cosine similarity check:
 python weight_extractor.py --verify
-# Expected: cosine similarity > 0.999 for all layers ✅
+# Expected: cosine similarity > 0.999 for all layers 
 ```
 
 ### Step 3 — Generate Test Beat Files
@@ -431,11 +431,11 @@ iverilog -g2012 -o ecg_sim \
 vvp ecg_sim
 
 # Expected output:
-# [PASS] TC0 flat line     → Normal (0)  ✅
-# [PASS] TC1 normal beat   → Normal (0)  ✅
-# [PASS] TC2 abnormal beat → Abnormal (1) ✅
-# [PASS] TC3 max stress    → Normal (0)  ✅
-# [PASS] TC4 triangle wave → Normal (0)  ✅
+# [PASS] TC0 flat line     → Normal (0)  
+# [PASS] TC1 normal beat   → Normal (0)  
+# [PASS] TC2 abnormal beat → Abnormal (1) 
+# [PASS] TC3 max stress    → Normal (0)  
+# [PASS] TC4 triangle wave → Normal (0)  
 # RESULT: 5/5 PASSED
 
 # View waveforms
@@ -451,7 +451,7 @@ launch_simulation
 run 20ms
 ```
 
-> ⚠️ Copy all `hex/*.hex` and `tb/*.hex` files to the Vivado simulation run directory before simulating.
+>  Copy all `hex/*.hex` and `tb/*.hex` files to the Vivado simulation run directory before simulating.
 
 ### Step 6 — FPGA Deployment (Zynq-7020)
 
@@ -468,17 +468,17 @@ arm-linux-gnueabihf-gcc -O2 -o energy_ctrl energy_controller.c
 
 ---
 
-## 🎯 Demo / Results
+##  Demo / Results
 
 ### Simulation Waveform Summary
 
 | Test Case | Input | RTL Result | Expected | Status |
 |-----------|-------|-----------|----------|--------|
-| TC0 — Flat line | 187 × `0x00` | Normal (0) | Normal (0) | ✅ |
-| TC1 — PQRST beat | `test_normal.hex` | Normal (0) | Normal (0) | ✅ |
-| TC2 — PVC-like beat | `test_abnormal.hex` | Abnormal (1) | Abnormal (1) | ✅ |
-| TC3 — Max stress | 187 × `0x7F` | Normal (0) | Normal (0) | ✅ |
-| TC4 — Triangle PQRST | Gradient waveform | Normal (0) | Normal (0) | ✅ |
+| TC0 — Flat line | 187 × `0x00` | Normal (0) | Normal (0) | 
+| TC1 — PQRST beat | `test_normal.hex` | Normal (0) | Normal (0) | 
+| TC2 — PVC-like beat | `test_abnormal.hex` | Abnormal (1) | Abnormal (1) | 
+| TC3 — Max stress | 187 × `0x7F` | Normal (0) | Normal (0) | 
+| TC4 — Triangle PQRST | Gradient waveform | Normal (0) | Normal (0) | 
 
 **Timing verified:** 661,299 cycles per beat at 100 MHz = **6.613 ms** — within the <10 ms clinical real-time threshold.
 
@@ -492,27 +492,6 @@ Actual Normal  [ 97.9%   2.1% ]
 ```
 
 ---
-
-## 🔭 Future Work
-
-| Priority | Feature | Impact |
-|----------|---------|--------|
-| 🔴 High | Automated SHIFT parameter derivation in `weight_extractor.py` | Production robustness |
-| 🔴 High | AXI DMA for beat buffer transfer (replace per-byte AXI4-Lite loop) | −85% PS overhead |
-| 🟡 Medium | 12-lead ECG input (PTB-XL dataset, Conv1 IN_CH=12) | Broader arrhythmia coverage |
-| 🟡 Medium | BACnet/IP gateway for standards-compliant BMS integration | Hospital deployment |
-| 🟡 Medium | Multi-patient ward: 8 parallel PL inference channels on ZU3EG | Scalability |
-| 🟢 Low | Federated learning: cross-hospital model updates without raw data sharing | Privacy-preserving AI |
-| 🟢 Low | HL7 FHIR API integration for automatic EHR anomaly logging | Clinical workflow |
-
----
-
-## 👥 Contributors
-
-| Name | Role | Institute |
-|------|------|-----------|
-| **Vishnuteja Ambati** | Team Leader — RTL Design, AI Pipeline, System Integration | BITS Hyderabad |
-| **Maheedhar Reddy** | Contributor — Energy Optimization, Verification, Documentation | BITS Hyderabad |
 
 > **Team Ravex** | Birla Institute of Technology and Science, Hyderabad
 
