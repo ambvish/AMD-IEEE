@@ -473,7 +473,7 @@ arm-linux-gnueabihf-gcc -O2 -o energy_ctrl energy_controller.c
 
 ### Simulation Waveform Summary
 
-| Test Case | Input | RTL Result | Expected | Status |
+| Test Case | Input | RTL Result | Expected | 
 |-----------|-------|-----------|----------|--------|
 | TC0 — Flat line | 187 × `0x00` | Normal (0) | Normal (0) | 
 | TC1 — PQRST beat | `test_normal.hex` | Normal (0) | Normal (0) | 
