@@ -528,7 +528,4 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
 *Team Ravex · BITS Hyderabad · 2026*
 
-[![Stars](https://img.shields.io/github/stars/ravex/smart-hospital-fpga?style=social)]()
-[![Forks](https://img.shields.io/github/forks/ravex/smart-hospital-fpga?style=social)]()
-
 </div>
