@@ -1,237 +1,421 @@
 // =============================================================================
-//  conv1d_layer.v  —  Sequential Parameterised 1D Convolution Layer
+//  ecg_inference_top.v  —  Top-Level ECG Inference Engine
 //  Project : Smart Hospital Edge AI  |  ECG Inference Engine
-//  Target  : Zynq-7020
+//  Target  : Zynq-7020 (Pynq-Z2 / ZedBoard / Ultra96)
 //
-//  Computes one output element (oc, t) per (IN_CH * KERNEL) + 2 clock cycles:
-//    - 1 cycle  : preload bias  (CLEAR state)
-//    - IN_CH*K  : multiply-accumulate loop
-//    - 1 cycle  : wait for final MAC to register (LATCH state)
-//    - 1 cycle  : ReLU + requantise + write output (WRITE state)
-//
-//  Weight ROM layout (from weight_extractor.py):
-//    addr = oc * (IN_CH * KERNEL) + ic * KERNEL + k
-//    Total words = OUT_CH * IN_CH * KERNEL
-//
-//  Requantisation  (per-tensor approximation for hackathon):
-//    out_int8 = clip( acc[ACC_W-1 : SHIFT] , 0, 127 )   after ReLU
-//    SHIFT parameter must be tuned post-training (default 8).
-//    See weights_manifest.json for per-channel scales if finer control needed.
+//  Architecture:
+//    Input  → Conv1(1→16,k=5,pad=2) → ReLU → MaxPool2
+//           → Conv2(16→32,k=5,pad=2) → ReLU → MaxPool2
+//           → Conv3(32→64,k=3,pad=1) → ReLU → MaxPool2
+//           → FC1(1472→64) → ReLU
+//           → FC2(64→1) → sign(logit) → classification output
 //
 //  Interface:
-//    Caller provides a flat input buffer (in_buf) and receives a flat
-//    output buffer (out_buf), both with word-width DATA_W bits.
-//    Buffer is written incrementally as computation proceeds.
-//    done goes high for one cycle when all OUT_CH*OUT_LEN elements are written.
+//    The PS (ARM) loads 187 INT8 samples via AXI-Lite/BRAM or directly
+//    through the input_data / input_valid / input_ready handshake below.
+//    Assert start after all 187 samples are loaded.
+//    Read result when done=1.
+//
+//  Sample loading:
+//    Drive input_data[7:0] and input_wr=1 for 187 consecutive cycles.
+//    input_addr[7:0] selects sample index 0..186.
+//
+//  Timing budget @ 100 MHz (verified by RTL math check):
+//    Conv1 : 16 × 187 × (1×5  +3) =  23,936 cycles
+//    Pool1 : 16 × 93               =   1,488 cycles
+//    Conv2 : 32 × 93  × (16×5 +3) = 247,008 cycles
+//    Pool2 : 32 × 46               =   1,472 cycles
+//    Conv3 : 64 × 46  × (32×3 +3) = 291,456 cycles
+//    Pool3 : 64 × 23               =   1,472 cycles
+//    FC1   : 64 × (1472+3)         =  94,400 cycles
+//    FC2   :  1 × (64+3)           =      67 cycles
+//    TOTAL :                           661,299 cycles  ≈ 6.61 ms @ 100 MHz ✓
+//
+//  Activation buffer sizes:
+//    act0 [0:186]     187   × 8b  input
+//    act1 [0:2975]   16×186 × 8b  conv1 out  (pre-pool; 16×187=2992, rounded)
+//    act2 [0:1487]   16×93  × 8b  pool1 out
+//    act3 [0:2975]   32×93  × 8b  conv2 out
+//    act4 [0:1471]   32×46  × 8b  pool2 out
+//    act5 [0:2943]   64×46  × 8b  conv3 out
+//    act6 [0:1471]   64×23  × 8b  pool3 out  (= FC1 input, 1472 elements)
+//    act7 [0:63]     64     × 8b  FC1  out
 // =============================================================================
 
-module conv1d_layer #(
-    // ── Network dimensions ────────────────────────────────────────────────────
-    parameter IN_CH     = 1,     // input  channels
-    parameter OUT_CH    = 16,    // output channels (filters)
-    parameter KERNEL    = 5,     // kernel size (must be odd for symmetric pad)
-    parameter PAD       = 2,     // zero-padding each side
-    parameter IN_LEN    = 187,   // input  time length  (after padding handled here)
-    parameter OUT_LEN   = 187,   // output time length  = IN_LEN + 2*PAD - KERNEL + 1
-    // ── Quantisation ─────────────────────────────────────────────────────────
-    parameter SHIFT     = 8,     // arithmetic right-shift for requantisation
-    parameter DATA_W    = 8,     // weight / activation bit width
-    parameter ACC_W     = 32,    // accumulator bit width
-    // ── ROM parameters ────────────────────────────────────────────────────────
-    parameter W_DEPTH   = OUT_CH * IN_CH * KERNEL,  // weight ROM depth
-    parameter B_DEPTH   = OUT_CH,                    // bias ROM depth
-    parameter W_FILE    = "conv1_weights.hex",
-    parameter B_FILE    = "conv1_bias.hex"
-) (
+`include "weights_pkg.vh"
+
+module ecg_inference_top (
     input  wire        clk,
     input  wire        rst_n,
-    input  wire        start,            // pulse high for 1 cycle to begin
 
-    // ── Input activation buffer (flat: ic*IN_LEN + t) ────────────────────────
-    input  wire signed [DATA_W-1:0] in_buf  [0 : IN_CH*IN_LEN-1],
+    // ── Sample loading interface ──────────────────────────────────────────────
+    input  wire [7:0]  input_addr,    // sample index 0..186
+    input  wire signed [7:0] input_data, // INT8 sample value
+    input  wire        input_wr,      // write strobe
 
-    // ── Output activation buffer (flat: oc*OUT_LEN + t) ─────────────────────
-    output reg  signed [DATA_W-1:0] out_buf [0 : OUT_CH*OUT_LEN-1],
+    // ── Control ───────────────────────────────────────────────────────────────
+    input  wire        start,         // pulse after all samples loaded
 
-    output reg  done                     // single-cycle pulse when complete
+    // ── Result ────────────────────────────────────────────────────────────────
+    output reg         result,        // 0 = Normal, 1 = Abnormal
+    output reg         done,          // single-cycle pulse when result valid
+    output reg [3:0]   state_out      // debug: current FSM state
 );
 
     // =========================================================================
-    //  Weight and Bias ROMs
+    //  Parameters (must match training pipeline exactly)
     // =========================================================================
-    reg signed [DATA_W-1:0]  w_rom [0 : W_DEPTH-1];
-    reg signed [ACC_W-1:0]   b_rom [0 : B_DEPTH-1];
+    localparam IN_LEN     = 187;
+    localparam CONV1_OLEN = 187;   // conv output length (same as input, pad compensates)
+    localparam POOL1_OLEN = 93;    // 187/2 = 93 (floor)
+    localparam CONV2_OLEN = 93;
+    localparam POOL2_OLEN = 46;    // 93/2 = 46
+    localparam CONV3_OLEN = 46;
+    localparam POOL3_OLEN = 23;    // 46/2 = 23
+    localparam FC1_IN     = 64 * 23;  // 1472
 
-    initial begin
-        $readmemh(W_FILE, w_rom);
-        $readmemh(B_FILE, b_rom);
+    // Requantisation shifts  — tune based on weights_manifest.json scales
+    localparam CONV1_SHIFT = 8;
+    localparam CONV2_SHIFT = 8;
+    localparam CONV3_SHIFT = 8;
+    localparam FC1_SHIFT   = 8;
+
+    // =========================================================================
+    //  Top-Level FSM states
+    // =========================================================================
+    localparam ST_IDLE      = 4'd0;
+    localparam ST_CONV1     = 4'd1;
+    localparam ST_POOL1     = 4'd2;
+    localparam ST_CONV2     = 4'd3;
+    localparam ST_POOL2     = 4'd4;
+    localparam ST_CONV3     = 4'd5;
+    localparam ST_POOL3     = 4'd6;
+    localparam ST_FC1       = 4'd7;
+    localparam ST_FC2       = 4'd8;
+    localparam ST_OUTPUT    = 4'd9;
+
+    reg [3:0] state;
+    assign state_out = state;
+
+    // =========================================================================
+    //  Activation Buffers
+    // =========================================================================
+    reg signed [7:0] act0 [0 : IN_LEN-1];                  // input
+    reg signed [7:0] act1 [0 : 16*CONV1_OLEN-1];           // conv1 out
+    reg signed [7:0] act2 [0 : 16*POOL1_OLEN-1];           // pool1 out
+    reg signed [7:0] act3 [0 : 32*CONV2_OLEN-1];           // conv2 out
+    reg signed [7:0] act4 [0 : 32*POOL2_OLEN-1];           // pool2 out
+    reg signed [7:0] act5 [0 : 64*CONV3_OLEN-1];           // conv3 out
+    reg signed [7:0] act6 [0 : 64*POOL3_OLEN-1];           // pool3 out / FC1 in
+    reg signed [7:0] act7 [0 : 63];                         // FC1 out
+
+    // =========================================================================
+    //  Input sample loading (PS → act0)
+    // =========================================================================
+    always @(posedge clk) begin
+        if (input_wr)
+            act0[input_addr] <= input_data;
     end
 
     // =========================================================================
-    //  State machine
+    //  Layer start / done signals
     // =========================================================================
-    localparam S_IDLE   = 3'd0;
-    localparam S_CLEAR  = 3'd1;   // preload accumulator with bias[oc]
-    localparam S_MAC    = 3'd2;   // inner loop: ic × k iterations
-    localparam S_LATCH  = 3'd3;   // wait 1 cycle for last MAC result to register
-    localparam S_WRITE  = 3'd4;   // ReLU + shift + write to out_buf
-    localparam S_DONE   = 3'd5;
-
-    reg [2:0]  state;
-
-    // ── Loop counters ─────────────────────────────────────────────────────────
-    //  Widths: clog2-sized.  Using 16-bit is safe for all layer sizes here.
-    reg [7:0]  oc;   // current output channel  [0 .. OUT_CH-1]
-    reg [7:0]  t;    // current output time step [0 .. OUT_LEN-1]
-    reg [7:0]  ic;   // inner: input channel     [0 .. IN_CH-1]
-    reg [3:0]  k;    // inner: kernel position   [0 .. KERNEL-1]
+    reg  conv1_start, conv2_start, conv3_start;
+    reg  fc1_start,   fc2_start;
+    wire conv1_done,  conv2_done,  conv3_done;
+    wire fc1_done,    fc2_done;
 
     // =========================================================================
-    //  MAC unit wiring
+    //  Conv1 Instance  (1→16, k=5, pad=2, IN_LEN=187)
     // =========================================================================
-    reg                  mac_clear;
-    reg                  mac_en;
-    reg  signed [DATA_W-1:0] mac_weight;
-    reg  signed [DATA_W-1:0] mac_act;
-    wire signed [ACC_W-1:0]  mac_acc;
-
-    mac_unit u_mac (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .clear    (mac_clear),
-        .en       (mac_en),
-        .weight   (mac_weight),
-        .act      (mac_act),
-        .bias_in  (b_rom[oc]),
-        .acc      (mac_acc)
+    conv1d_layer #(
+        .IN_CH    (1),
+        .OUT_CH   (16),
+        .KERNEL   (5),
+        .PAD      (2),
+        .IN_LEN   (CONV1_OLEN),
+        .OUT_LEN  (CONV1_OLEN),
+        .SHIFT    (CONV1_SHIFT),
+        .W_DEPTH  (16*1*5),
+        .B_DEPTH  (16),
+        .W_FILE   ("conv1_weights.hex"),
+        .B_FILE   ("conv1_bias.hex")
+    ) u_conv1 (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .start   (conv1_start),
+        .in_buf  (act0),
+        .out_buf (act1),
+        .done    (conv1_done)
     );
 
     // =========================================================================
-    //  Weight + activation lookup (combinational, feeds MAC on same cycle)
+    //  Conv2 Instance  (16→32, k=5, pad=2, IN_LEN=93)
     // =========================================================================
-
-    // Weight ROM address for current (oc, ic, k)
-    wire [31:0] w_addr = oc * (IN_CH * KERNEL) + ic * KERNEL + k;
-
-    // Input position in the original (un-padded) time axis
-    wire signed [15:0] in_pos = $signed({8'b0, t}) + $signed({8'b0, k})
-                                 - $signed({{12{1'b0}}, PAD[3:0]});
-
-    // Activation: zero if outside valid range (implements zero-padding)
-    wire in_valid = (in_pos >= 0) && (in_pos < IN_LEN);
-    wire [31:0] in_addr  = ic * IN_LEN + in_pos[7:0];  // safe: in_valid checked
+    conv1d_layer #(
+        .IN_CH    (16),
+        .OUT_CH   (32),
+        .KERNEL   (5),
+        .PAD      (2),
+        .IN_LEN   (POOL1_OLEN),
+        .OUT_LEN  (POOL1_OLEN),
+        .SHIFT    (CONV2_SHIFT),
+        .W_DEPTH  (32*16*5),
+        .B_DEPTH  (32),
+        .W_FILE   ("conv2_weights.hex"),
+        .B_FILE   ("conv2_bias.hex")
+    ) u_conv2 (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .start   (conv2_start),
+        .in_buf  (act2),
+        .out_buf (act3),
+        .done    (conv2_done)
+    );
 
     // =========================================================================
-    //  FSM
+    //  Conv3 Instance  (32→64, k=3, pad=1, IN_LEN=46)
+    // =========================================================================
+    conv1d_layer #(
+        .IN_CH    (32),
+        .OUT_CH   (64),
+        .KERNEL   (3),
+        .PAD      (1),
+        .IN_LEN   (POOL2_OLEN),
+        .OUT_LEN  (POOL2_OLEN),
+        .SHIFT    (CONV3_SHIFT),
+        .W_DEPTH  (64*32*3),
+        .B_DEPTH  (64),
+        .W_FILE   ("conv3_weights.hex"),
+        .B_FILE   ("conv3_bias.hex")
+    ) u_conv3 (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .start   (conv3_start),
+        .in_buf  (act4),
+        .out_buf (act5),
+        .done    (conv3_done)
+    );
+
+    // =========================================================================
+    //  FC1 Instance  (1472→64, with ReLU)
+    // =========================================================================
+    fc_layer #(
+        .IN_SIZE    (FC1_IN),
+        .OUT_SIZE   (64),
+        .SHIFT      (FC1_SHIFT),
+        .APPLY_RELU (1),
+        .W_DEPTH    (64 * FC1_IN),
+        .B_DEPTH    (64),
+        .W_FILE     ("fc1_weights.hex"),
+        .B_FILE     ("fc1_bias.hex")
+    ) u_fc1 (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .start   (fc1_start),
+        .in_vec  (act6),
+        .out_vec (act7),
+        .out_raw (/* unused */),
+        .done    (fc1_done)
+    );
+
+    // =========================================================================
+    //  FC2 Instance  (64→1, no ReLU — raw logit for sign comparison)
+    // =========================================================================
+    wire signed [7:0]  fc2_out_vec [0:0];
+    wire signed [31:0] fc2_out_raw;
+
+    fc_layer #(
+        .IN_SIZE    (64),
+        .OUT_SIZE   (1),
+        .SHIFT      (8),
+        .APPLY_RELU (0),
+        .W_DEPTH    (1 * 64),
+        .B_DEPTH    (1),
+        .W_FILE     ("fc2_weights.hex"),
+        .B_FILE     ("fc2_bias.hex")
+    ) u_fc2 (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .start   (fc2_start),
+        .in_vec  (act7),
+        .out_vec (fc2_out_vec),
+        .out_raw (fc2_out_raw),
+        .done    (fc2_done)
+    );
+
+    // =========================================================================
+    //  MaxPool helper: runs as part of the top FSM using counters
+    // =========================================================================
+    reg [7:0]  pool_ch;      // channel index
+    reg [7:0]  pool_t;       // output time index (= input_time / 2)
+    reg [3:0]  pool_state;   // which pool stage we're in
+
+    // Inline max-of-two
+    function signed [7:0] max8;
+        input signed [7:0] a, b;
+        begin
+            max8 = (a > b) ? a : b;
+        end
+    endfunction
+
+    // =========================================================================
+    //  Top FSM
     // =========================================================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state      <= S_IDLE;
-            oc         <= 0;
-            t          <= 0;
-            ic         <= 0;
-            k          <= 0;
-            done       <= 1'b0;
-            mac_clear  <= 1'b0;
-            mac_en     <= 1'b0;
-            mac_weight <= 0;
-            mac_act    <= 0;
+            state       <= ST_IDLE;
+            done        <= 1'b0;
+            result      <= 1'b0;
+            conv1_start <= 1'b0;
+            conv2_start <= 1'b0;
+            conv3_start <= 1'b0;
+            fc1_start   <= 1'b0;
+            fc2_start   <= 1'b0;
+            pool_ch     <= 0;
+            pool_t      <= 0;
         end else begin
-            // Default: deassert single-cycle signals
-            mac_clear <= 1'b0;
-            mac_en    <= 1'b0;
-            done      <= 1'b0;
+            // Default: deassert single-cycle start pulses
+            conv1_start <= 1'b0;
+            conv2_start <= 1'b0;
+            conv3_start <= 1'b0;
+            fc1_start   <= 1'b0;
+            fc2_start   <= 1'b0;
+            done        <= 1'b0;
 
             case (state)
 
-                // ── Wait for start pulse ─────────────────────────────────────
-                S_IDLE: begin
+                // ─────────────────────────────────────────────────────────────
+                ST_IDLE: begin
                     if (start) begin
-                        oc    <= 0;
-                        t     <= 0;
-                        ic    <= 0;
-                        k     <= 0;
-                        state <= S_CLEAR;
+                        conv1_start <= 1'b1;
+                        state       <= ST_CONV1;
                     end
                 end
 
-                // ── Preload accumulator with bias[oc] ────────────────────────
-                //  mac_unit registers bias on the NEXT posedge, so MAC starts
-                //  the cycle after CLEAR.
-                S_CLEAR: begin
-                    mac_clear <= 1'b1;       // acc ← bias_in (registered next cycle)
-                    ic        <= 0;
-                    k         <= 0;
-                    state     <= S_MAC;
+                // ─────────────────────────────────────────────────────────────
+                ST_CONV1: begin
+                    if (conv1_done) begin
+                        // Begin MaxPool1: collapse act1 (16×187) → act2 (16×93)
+                        pool_ch <= 0;
+                        pool_t  <= 0;
+                        state   <= ST_POOL1;
+                    end
                 end
 
-                // ── Inner loop: accumulate over (ic, k) ──────────────────────
-                S_MAC: begin
-                    mac_en     <= in_valid;  // zero-pad: don't accumulate if out-of-bounds
-                    mac_weight <= w_rom[w_addr];
-                    mac_act    <= in_valid ? in_buf[in_addr] : 8'sd0;
+                // ── MaxPool1: act1 → act2 ────────────────────────────────────
+                //  act1 layout: [oc * CONV1_OLEN + t]
+                //  act2 layout: [oc * POOL1_OLEN + t_pool]
+                ST_POOL1: begin
+                    begin : pool1_block
+                        reg signed [7:0] v0, v1;
+                        v0 = act1[pool_ch * CONV1_OLEN + pool_t * 2];
+                        v1 = act1[pool_ch * CONV1_OLEN + pool_t * 2 + 1];
+                        act2[pool_ch * POOL1_OLEN + pool_t] <= max8(v0, v1);
+                    end
 
-                    // Advance k
-                    if (k == KERNEL - 1) begin
-                        k <= 0;
-                        if (ic == IN_CH - 1) begin
-                            // All (ic,k) done for this (oc,t) → wait for last MAC
-                            ic    <= 0;
-                            state <= S_LATCH;
+                    if (pool_t == POOL1_OLEN - 1) begin
+                        pool_t <= 0;
+                        if (pool_ch == 15) begin       // 16 channels
+                            conv2_start <= 1'b1;
+                            state       <= ST_CONV2;
                         end else begin
-                            ic <= ic + 1;
+                            pool_ch <= pool_ch + 1;
                         end
                     end else begin
-                        k <= k + 1;
+                        pool_t <= pool_t + 1;
                     end
                 end
 
-                // ── Wait 1 cycle for final MAC result to register ─────────────
-                S_LATCH: begin
-                    state <= S_WRITE;
+                // ─────────────────────────────────────────────────────────────
+                ST_CONV2: begin
+                    if (conv2_done) begin
+                        pool_ch <= 0;
+                        pool_t  <= 0;
+                        state   <= ST_POOL2;
+                    end
                 end
 
-                // ── ReLU + arithmetic right-shift + write output ──────────────
-                S_WRITE: begin
-                    begin : relu_requant
-                        reg signed [ACC_W-1:0] shifted;
-                        reg signed [DATA_W-1:0] clamped;
-
-                        shifted = mac_acc >>> SHIFT;  // arithmetic right shift
-
-                        // ReLU: clip to 0 if negative; clip to 127 if overflow
-                        if (shifted[ACC_W-1])           // sign bit set → negative
-                            clamped = 8'sd0;
-                        else if (shifted > 127)
-                            clamped = 8'sd127;
-                        else
-                            clamped = shifted[DATA_W-1:0];
-
-                        out_buf[oc * OUT_LEN + t] <= clamped;
+                // ── MaxPool2: act3 → act4 ────────────────────────────────────
+                ST_POOL2: begin
+                    begin : pool2_block
+                        reg signed [7:0] v0, v1;
+                        v0 = act3[pool_ch * CONV2_OLEN + pool_t * 2];
+                        v1 = act3[pool_ch * CONV2_OLEN + pool_t * 2 + 1];
+                        act4[pool_ch * POOL2_OLEN + pool_t] <= max8(v0, v1);
                     end
 
-                    // Advance (oc, t) counters
-                    if (t == OUT_LEN - 1) begin
-                        t <= 0;
-                        if (oc == OUT_CH - 1) begin
-                            state <= S_DONE;
+                    if (pool_t == POOL2_OLEN - 1) begin
+                        pool_t <= 0;
+                        if (pool_ch == 31) begin       // 32 channels
+                            conv3_start <= 1'b1;
+                            state       <= ST_CONV3;
                         end else begin
-                            oc    <= oc + 1;
-                            state <= S_CLEAR;   // load next filter's bias
+                            pool_ch <= pool_ch + 1;
                         end
                     end else begin
-                        t     <= t + 1;
-                        state <= S_CLEAR;       // load same filter's bias for next t
+                        pool_t <= pool_t + 1;
                     end
                 end
 
-                // ── Signal completion ─────────────────────────────────────────
-                S_DONE: begin
+                // ─────────────────────────────────────────────────────────────
+                ST_CONV3: begin
+                    if (conv3_done) begin
+                        pool_ch <= 0;
+                        pool_t  <= 0;
+                        state   <= ST_POOL3;
+                    end
+                end
+
+                // ── MaxPool3: act5 → act6  (flattened; FC1 reads act6) ───────
+                //  act5 layout: [oc * CONV3_OLEN + t]
+                //  act6 layout: [oc * POOL3_OLEN + t]  (= FC1 linear input)
+                ST_POOL3: begin
+                    begin : pool3_block
+                        reg signed [7:0] v0, v1;
+                        v0 = act5[pool_ch * CONV3_OLEN + pool_t * 2];
+                        v1 = act5[pool_ch * CONV3_OLEN + pool_t * 2 + 1];
+                        act6[pool_ch * POOL3_OLEN + pool_t] <= max8(v0, v1);
+                    end
+
+                    if (pool_t == POOL3_OLEN - 1) begin
+                        pool_t <= 0;
+                        if (pool_ch == 63) begin       // 64 channels
+                            fc1_start <= 1'b1;
+                            state     <= ST_FC1;
+                        end else begin
+                            pool_ch <= pool_ch + 1;
+                        end
+                    end else begin
+                        pool_t <= pool_t + 1;
+                    end
+                end
+
+                // ─────────────────────────────────────────────────────────────
+                ST_FC1: begin
+                    if (fc1_done) begin
+                        fc2_start <= 1'b1;
+                        state     <= ST_FC2;
+                    end
+                end
+
+                // ─────────────────────────────────────────────────────────────
+                ST_FC2: begin
+                    if (fc2_done)
+                        state <= ST_OUTPUT;
+                end
+
+                // ── Classification: sign of raw INT32 logit ─────────────────
+                //  sigmoid(logit) > 0.5  ↔  logit > 0  → Abnormal (1)
+                //  sigmoid(logit) ≤ 0.5  ↔  logit ≤ 0  → Normal   (0)
+                //  Single comparison on the full INT32 value — no scaling needed.
+                ST_OUTPUT: begin
+                    result <= ($signed(fc2_out_raw) > 32'sd0) ? 1'b1 : 1'b0;
                     done  <= 1'b1;
-                    state <= S_IDLE;
+                    state <= ST_IDLE;
                 end
 
-                default: state <= S_IDLE;
+                default: state <= ST_IDLE;
             endcase
         end
     end
