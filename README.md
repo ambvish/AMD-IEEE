@@ -123,7 +123,7 @@ Classification: result = (logit > 0) ? Abnormal : Normal
 
 ---
 
-## 📈 Performance Metrics
+##  Performance Metrics
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
@@ -139,7 +139,7 @@ Classification: result = (logit > 0) ? Abnormal : Normal
 
 ---
 
-## ⚡ Latency Comparison
+##  Latency Comparison
 
 | Platform | Latency | Clock | vs This Work |
 |----------|---------|-------|-------------|
