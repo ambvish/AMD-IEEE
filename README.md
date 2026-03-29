@@ -233,7 +233,7 @@ S_IDLE → S_CLEAR → S_MAC → S_LATCH → S_WRITE → S_DONE
 
 ---
 
-## 🔬 FPGA Implementation Details
+##  FPGA Implementation Details
 
 ### INT8 Symmetric Quantization
 - **Conv layers:** Per-channel symmetric quantization (one scale per output channel)
