@@ -202,15 +202,17 @@ module ecg_inference_tb;
             for (i = 0; i < BEAT_LEN; i = i + 1) begin
                 // Baseline at 20, sharp R-peak at sample 93 (centre), width 30
                 v = 20.0;
-                // P-wave: small bump at sample 40, width 15
-                if (i >= 30 && i <= 55)
-                    v = v + 20.0 * (1.0 - $abs(i - 40) / 13.0);
-                // R-peak: tall spike at sample 93, width 12
-                if (i >= 84 && i <= 103)
-                    v = v + 100.0 * (1.0 - $abs(i - 93) / 10.0);
-                // T-wave: medium bump at sample 140, width 20
-                if (i >= 120 && i <= 165)
-                    v = v + 30.0 * (1.0 - $abs(i - 140) / 25.0);
+               // P-wave: small bump
+if (i >= 30 && i <= 55)
+    v = v + 20.0 * (1.0 - ((i - 40 < 0) ? -(i - 40) : (i - 40)) / 13.0);
+
+// R-peak: tall spike
+if (i >= 84 && i <= 103)
+    v = v + 100.0 * (1.0 - ((i - 93 < 0) ? -(i - 93) : (i - 93)) / 10.0);
+
+// T-wave: medium bump
+if (i >= 120 && i <= 165)
+    v = v + 30.0 * (1.0 - ((i - 140 < 0) ? -(i - 140) : (i - 140)) / 25.0);
 
                 if (v < 0.0)   v = 0.0;
                 if (v > 127.0) v = 127.0;
