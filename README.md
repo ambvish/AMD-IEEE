@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/FPGA-Zynq--7020-red)](https://www.xilinx.com/products/silicon-devices/soc/zynq-7000.html)
 [![Model](https://img.shields.io/badge/Model-1D%20CNN%20INT8-green)]()
+[![ML](https://img.shields.io/badge/ML-PyTorch%20%7C%20Python-blue)]()
 [![Latency](https://img.shields.io/badge/Latency-6.61ms-brightgreen)]()
 [![Power](https://img.shields.io/badge/Power-1.75W-yellow)]()
 [![Team](https://img.shields.io/badge/Team-Ravex-purple)]()
