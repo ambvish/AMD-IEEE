@@ -54,7 +54,7 @@ The system is partitioned across the Zynq-7020's tightly coupled PS+PL architect
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        Zynq-7020 SoC (Zybo Z7-20)                   │
+│                        Zynq-7020 SoC (Zybo Z7-20)                    │
 │                                                                      │
 │  ┌──────────────────────────┐      ┌───────────────────────────────┐ │
 │  │   Processing System (PS) │      │  Programmable Logic (PL)      │ │
@@ -71,8 +71,8 @@ The system is partitioned across the Zynq-7020's tightly coupled PS+PL architect
 │  │  └────────┬───────────┘  │      │  │  BRAM: 89 × 36Kb blocks │  │ │
 │  │           │              │      │  └─────────────────────────┘  │ │
 │  └───────────┼──────────────┘      └───────────────────────────────┘ │
-│              │                                                        │
-│     UART/GPIO│RS-485                                                  │
+│              │                                                       │
+│     UART/GPIO│RS-485                                                 │
 └──────────────┼───────────────────────────────────────────────────────┘
                │
      ┌─────────▼──────────┐
